@@ -27,7 +27,7 @@ extern "C" {
 #endif
 
 /* Includes ------------------------------------------------------------------*/
-#include "stm32f0xx_hal.h"
+#include "stm32h7xx_hal.h"
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
@@ -57,14 +57,18 @@ void Error_Handler(void);
 /* USER CODE END EFP */
 
 /* Private defines -----------------------------------------------------------*/
-#define CHARGE_DONE_Pin GPIO_PIN_2
-#define CHARGE_DONE_GPIO_Port GPIOA
-#define CHARGE_FAULT_Pin GPIO_PIN_3
-#define CHARGE_FAULT_GPIO_Port GPIOA
-#define CHARGE_START_Pin GPIO_PIN_4
-#define CHARGE_START_GPIO_Port GPIOA
-#define SPI_CS_Pin GPIO_PIN_1
-#define SPI_CS_GPIO_Port GPIOB
+#define NCS_Pin GPIO_PIN_4
+#define NCS_GPIO_Port GPIOA
+#define DRV_TIM_Pin GPIO_PIN_9
+#define DRV_TIM_GPIO_Port GPIOC
+#define WD_TIM_Pin GPIO_PIN_8
+#define WD_TIM_GPIO_Port GPIOA
+#define SWDIO_Pin GPIO_PIN_13
+#define SWDIO_GPIO_Port GPIOA
+#define SWCLK_Pin GPIO_PIN_14
+#define SWCLK_GPIO_Port GPIOA
+#define SWO_Pin GPIO_PIN_3
+#define SWO_GPIO_Port GPIOB
 
 /* USER CODE BEGIN Private defines */
 
