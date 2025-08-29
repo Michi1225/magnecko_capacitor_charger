@@ -19,6 +19,7 @@
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
 #include "adc.h"
+#include "dac.h"
 #include "memorymap.h"
 #include "spi.h"
 #include "tim.h"
@@ -60,6 +61,7 @@ static void MPU_Config(void);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
+uint8_t RX_Buffer[8] = {0};
 
 /* USER CODE END 0 */
 
@@ -104,14 +106,34 @@ int main(void)
   MX_SPI1_Init();
   MX_TIM1_Init();
   MX_TIM8_Init();
+  MX_DAC1_Init();
   /* USER CODE BEGIN 2 */
 
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
+  HAL_TIM_PWM_Start(&htim1, TIM_CHANNEL_1);
+  TIM1->CCR1 = 0;
+  TIM8->CCR4 = 0;
+  HAL_GPIO_WritePin(LED_R_GPIO_Port, LED_R_Pin, GPIO_PIN_RESET);
+  HAL_GPIO_WritePin(LED_G_GPIO_Port, LED_G_Pin, GPIO_PIN_RESET);
   while (1)
   {
+    // HAL_GPIO_TogglePin(LED_G_GPIO_Port, LED_G_Pin);
+    // HAL_Delay(500);
+    // HAL_GPIO_TogglePin(LED_G_GPIO_Port, LED_G_Pin);
+    // HAL_GPIO_TogglePin(LED_R_GPIO_Port, LED_R_Pin);
+    // HAL_Delay(500);
+    // HAL_GPIO_TogglePin(LED_R_GPIO_Port, LED_R_Pin);
+    // if(HAL_SPI_Receive(&hspi1, RX_Buffer, 8, 1000) == HAL_OK) HAL_GPIO_WritePin(LED_G_GPIO_Port, LED_G_Pin, GPIO_PIN_SET); //Receiving in Blocking mode
+    // HAL_Delay(10000000);
+
+    if(RX_Buffer[0]  > 100){
+      HAL_GPIO_WritePin(LED_R_GPIO_Port, LED_R_Pin, GPIO_PIN_SET);
+    }else{
+        HAL_GPIO_WritePin(LED_R_GPIO_Port, LED_R_Pin, GPIO_PIN_RESET);
+    } 
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
@@ -205,6 +227,13 @@ void PeriphCommonClock_Config(void)
 }
 
 /* USER CODE BEGIN 4 */
+
+void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin){
+    if(GPIO_Pin == NCS_Pin){
+        HAL_GPIO_TogglePin(LED_G_GPIO_Port, LED_G_Pin);
+        HAL_SPI_Receive(&hspi1, RX_Buffer, 8, 1000); //Receiving in Blocking mode
+    }
+}
 
 /* USER CODE END 4 */
 
