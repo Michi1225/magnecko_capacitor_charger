@@ -196,6 +196,24 @@ SECTIONS
     . = ALIGN(8);
   } >DTCMRAM
 
+  .RAM (NOLOAD) :
+  {
+    . = ALIGN(4);
+    _sram = .;         /* define a global symbol at RAM start */
+    *(.RAM)            /* .RAM sections */
+    . = ALIGN(4);
+    _eram = .;         /* define a global symbol at RAM end */
+  } >RAM
+
+    .RAM_D3 (NOLOAD) :
+  {
+    . = ALIGN(4);
+    _sram_d3 = .;     /* define a global symbol at RAM_D3 start */
+    *(.RAM_D3)        /* .RAM_D3 sections */
+    . = ALIGN(4);
+    _eram_d3 = .;     /* define a global symbol at RAM_D3 end */
+  } >RAM_D3
+
 
 
   /* Remove information from the standard libraries */
