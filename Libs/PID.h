@@ -2,13 +2,17 @@
 
 // #define ENABLE_PID
 
-#define PERIOD 1E-5 //10us
-#define KP 0.1f
-#define KI 40.0f
-#define KD 0.00f
-#define OUTPUT_MIN 0.0f
-#define OUTPUT_MAX 0.90f
+
+
+
+#define PERIOD 1E-5f //10us
+#define KP_I 0.1f
+#define KI_I 40.0f
+#define KD_I 0.00f
+#define OUTPUT_MIN_I 0.0f
+#define OUTPUT_MAX_I 0.90f
 #define CURRENT_SETPOINT 4.0f
+#define VOLTAGE_SETPOINT 200.0f
 
 typedef struct {
     float Kp;       // Proportional gain
@@ -21,7 +25,9 @@ typedef struct {
     float outputMax;// Maximum output limit
 } PIDController;
 
-void PID_Init(PIDController* pid);
-float PID_Compute(PIDController* pid, float measurement);
+float PID_Compute(PIDController* pid, float measurement, float dt);
 void PID_SetSetpoint(PIDController* pid, float setpoint);
 void PID_Reset(PIDController* pid);
+
+
+// extern PIDController current_controller;

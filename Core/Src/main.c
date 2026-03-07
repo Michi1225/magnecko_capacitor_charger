@@ -32,6 +32,8 @@
 #include "math.h"
 #include <string.h>
 #include "PID.h"
+#include "Controller.h"
+#include "swo.h"
 
 /* USER CODE END Includes */
 
@@ -61,54 +63,15 @@ void SystemClock_Config(void);
 void PeriphCommonClock_Config(void);
 static void MPU_Config(void);
 /* USER CODE BEGIN PFP */
-#define SWO_SPEED 5E6 // 4Mhz
-void SWD_Init(void)
-{
-  *(__IO uint32_t*)(0x5C001004) |= 0x00700000; // DBGMCU_CR D3DBGCKEN D1DBGCKEN TRACECLKEN
- 
-  //UNLOCK FUNNEL
-  *(__IO uint32_t*)(0x5C004FB0) = 0xC5ACCE55; // SWTF_LAR
-  *(__IO uint32_t*)(0x5C003FB0) = 0xC5ACCE55; // SWO_LAR
- 
-  //SWO current output divisor register
-  //This divisor value (0x000000C7) corresponds to 400Mhz
-  //To change it, you can use the following rule
-  // value = (CPU Freq/sw speed )-1
-  // devided by 2 because swo runs on half the System clock
-   *(__IO uint32_t*)(0x5C003010) = ((SystemCoreClock / SWO_SPEED / 2) - 1); // SWO_CODR
- 
-  //SWO selected pin protocol register
-   *(__IO uint32_t*)(0x5C0030F0) = 0x00000002; // SWO_SPPR
- 
-  //Enable ITM input of SWO trace funnel
-   *(__IO uint32_t*)(0x5C004000) |= 0x00000007; // SWFT_CTRL (PORT 0, 1 and 2)
- 
-  //RCC_AHB4ENR enable GPIOB clock
-   *(__IO uint32_t*)(0x580244E0) |= 0x00000002;
- 
-  // Configure GPIOB pin 3 as AF
-   *(__IO uint32_t*)(0x58020400) = (*(__IO uint32_t*)(0x58020400) & 0xffffff3f) | 0x00000080;
- 
-  // Configure GPIOB pin 3 Speed
-   *(__IO uint32_t*)(0x58020408) |= 0x00000080;
- 
-  // Force AF0 for GPIOB pin 3
-   *(__IO uint32_t*)(0x58020420) &= 0xFFFF0FFF;
-}
+
 
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
 uint8_t RX_Buffer[8] = {0};
-__section(".RAM_D3") uint32_t Vin;
-__section(".RAM") uint32_t Imeas;
-__section(".RAM") uint32_t Vout;
-uint32_t cnt = 0;
-uint32_t cnt1 = 0;
-PIDController pid;
-uint8_t OC_flag = 0;
-uint8_t OV_flag = 0;
+
+Controller charger_controller;
 
 /* USER CODE END 0 */
 
@@ -164,42 +127,20 @@ int main(void)
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
-  //WD
-  HAL_TIM_PWM_Start(&htim1, TIM_CHANNEL_1);
-  TIM1->CCR1 = 500;
-  HAL_TIM_Base_Start_IT(&htim2);
-
-  //DRV
-  HAL_TIM_PWM_Start(&htim8, TIM_CHANNEL_4);
-  TIM8->CCR4 = 0;
-
-  //Controller
-  PID_Init(&pid);
-  PID_SetSetpoint(&pid, CURRENT_SETPOINT); //1A
 
 
-  HAL_GPIO_WritePin(LED_R_GPIO_Port, LED_R_Pin, GPIO_PIN_SET);
+
+
+
+  HAL_GPIO_WritePin(LED_R_GPIO_Port, LED_R_Pin, GPIO_PIN_RESET);
   HAL_GPIO_WritePin(LED_G_GPIO_Port, LED_G_Pin, GPIO_PIN_RESET);
-  HAL_GPIO_WritePin(CLR_GPIO_Port, CLR_Pin, GPIO_PIN_RESET);
-  HAL_DAC_Start(&hdac1, DAC1_CHANNEL_1);
-  HAL_ADC_Start_DMA(&hadc3, &Vin, 1);
-  HAL_ADC_Start_DMA(&hadc2, &Imeas, 1);
-  // HAL_ADC_Start(&hadc2);
-  HAL_ADC_Start_DMA(&hadc1, &Vout, 1);
-  float t = 1.0f;
-  uint32_t sin = 0;
   SWD_Init();
-  ITM->PORT[0].u32 = 0x00;
-  ITM->PORT[1].u32 = 0x00;
-  ITM->PORT[2].u32 = 0x00;
+  Controller_Init(&charger_controller);
 
-  HAL_Delay(2000);
-  HAL_TIM_Base_Start_IT(&htim4);
   while (1)
   {
-    
-    float _Vout = ((((float)(Vout) - (float)(1<<15)) / (1<<15)) ) * 3.3f / 0.009756f;
-    if(_Vout < 100.0f) OV_flag = 0;
+    ITM->PORT[0].u16 = charger_controller.charger_data.vin_10mV;
+    HAL_Delay(10);
   
     /* USER CODE END WHILE */
 
@@ -296,147 +237,29 @@ void PeriphCommonClock_Config(void)
 /* USER CODE BEGIN 4 */
 
 void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin){
-    if(GPIO_Pin == NCS_Pin){
-        HAL_GPIO_TogglePin(LED_G_GPIO_Port, LED_G_Pin);
-        HAL_SPI_Receive(&hspi1, RX_Buffer, 8, 1000); //Receiving in Blocking mode
+    // Communication Request from Foot Controller
+    if(GPIO_Pin == NCS_Pin)
+    {
+      Controller_CommunicationHandler(&charger_controller);
+    }
+    else if (GPIO_Pin == OC_Pin)
+    {
+      charger_controller.charger_data.OC_fault = 1;
     }
 }
+
+
 
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 {
     if(htim->Instance == TIM2){
-        uint8_t WD_fault = (HAL_GPIO_ReadPin(WD_SNS_GPIO_Port, WD_SNS_Pin) == GPIO_PIN_RESET) ? 1 : 0;
-        uint8_t OC_fault = ((HAL_GPIO_ReadPin(OC_GPIO_Port, OC_Pin) == GPIO_PIN_SET) || OC_flag) ? 1 : 0;
-        if(OV_flag && WD_fault && OC_fault) //All faults, constant on
-        {
-          if(cnt % 2 == 0) HAL_GPIO_WritePin(LED_R_GPIO_Port, LED_R_Pin, GPIO_PIN_SET);
-          else HAL_GPIO_WritePin(LED_R_GPIO_Port, LED_R_Pin, GPIO_PIN_RESET);
-        }
-        else if(OV_flag && OC_fault) //Two short blinks
-        {
-          if(cnt < 100)
-          {
-            if(cnt % 2 == 0) HAL_GPIO_WritePin(LED_R_GPIO_Port, LED_R_Pin, GPIO_PIN_SET);
-            else HAL_GPIO_WritePin(LED_R_GPIO_Port, LED_R_Pin, GPIO_PIN_RESET);
-          } 
-          else if (cnt < 200) HAL_GPIO_WritePin(LED_R_GPIO_Port, LED_R_Pin, GPIO_PIN_RESET);
-          else if (cnt < 300)
-          {
-            if(cnt % 2 == 0) HAL_GPIO_WritePin(LED_R_GPIO_Port, LED_R_Pin, GPIO_PIN_SET);
-            else HAL_GPIO_WritePin(LED_R_GPIO_Port, LED_R_Pin, GPIO_PIN_RESET);
-          } 
-          else if (cnt < 400) HAL_GPIO_WritePin(LED_R_GPIO_Port, LED_R_Pin, GPIO_PIN_RESET);
-        }
-        else if (OC_fault && WD_fault) //3 short blinks
-        {
-          if(cnt < 100)
-          {
-            if(cnt % 2 == 0) HAL_GPIO_WritePin(LED_R_GPIO_Port, LED_R_Pin, GPIO_PIN_SET);
-            else HAL_GPIO_WritePin(LED_R_GPIO_Port, LED_R_Pin, GPIO_PIN_RESET);
-          } 
-          else if (cnt < 200) HAL_GPIO_WritePin(LED_R_GPIO_Port, LED_R_Pin, GPIO_PIN_RESET);
-          else if (cnt < 300)
-          {
-            if(cnt % 2 == 0) HAL_GPIO_WritePin(LED_R_GPIO_Port, LED_R_Pin, GPIO_PIN_SET);
-            else HAL_GPIO_WritePin(LED_R_GPIO_Port, LED_R_Pin, GPIO_PIN_RESET);
-          } 
-          else if (cnt < 400)
-          {
-            if(cnt % 2 == 0) HAL_GPIO_WritePin(LED_R_GPIO_Port, LED_R_Pin, GPIO_PIN_SET);
-            else HAL_GPIO_WritePin(LED_R_GPIO_Port, LED_R_Pin, GPIO_PIN_RESET);
-          } 
-          else if (cnt < 500) HAL_GPIO_WritePin(LED_R_GPIO_Port, LED_R_Pin, GPIO_PIN_RESET);
-        }
-        else if (OV_flag && WD_fault) //one short, one long blink
-        {
-          if(cnt < 100)
-          {
-            if(cnt % 2 == 0) HAL_GPIO_WritePin(LED_R_GPIO_Port, LED_R_Pin, GPIO_PIN_SET);
-            else HAL_GPIO_WritePin(LED_R_GPIO_Port, LED_R_Pin, GPIO_PIN_RESET);
-          } 
-          else if (cnt < 200) HAL_GPIO_WritePin(LED_R_GPIO_Port, LED_R_Pin, GPIO_PIN_RESET);
-          else if (cnt < 500)
-          {
-            if(cnt % 2 == 0) HAL_GPIO_WritePin(LED_R_GPIO_Port, LED_R_Pin, GPIO_PIN_SET);
-            else HAL_GPIO_WritePin(LED_R_GPIO_Port, LED_R_Pin, GPIO_PIN_RESET);
-          } 
-          else HAL_GPIO_WritePin(LED_R_GPIO_Port, LED_R_Pin, GPIO_PIN_RESET);
-        }
-        else if (WD_fault) //50% duty blink
-        {
-          if(cnt < 500) 
-          {
-            if(cnt % 2 == 0) HAL_GPIO_WritePin(LED_R_GPIO_Port, LED_R_Pin, GPIO_PIN_SET);
-            else HAL_GPIO_WritePin(LED_R_GPIO_Port, LED_R_Pin, GPIO_PIN_RESET);
-          } 
-          else HAL_GPIO_WritePin(LED_R_GPIO_Port, LED_R_Pin, GPIO_PIN_RESET);
-        }
-        else if (OC_fault) //short blink
-        {
-          if(cnt % 2 == 0 && cnt < 100) HAL_GPIO_WritePin(LED_R_GPIO_Port, LED_R_Pin, GPIO_PIN_SET);
-          else HAL_GPIO_WritePin(LED_R_GPIO_Port, LED_R_Pin, GPIO_PIN_RESET);
-        } 
-        else if (OV_flag) //fast blink
-        {
-          if(cnt < 100 && cnt % 7 == 0) HAL_GPIO_WritePin(LED_R_GPIO_Port, LED_R_Pin, GPIO_PIN_SET);
-          else if (cnt < 200) HAL_GPIO_WritePin(LED_R_GPIO_Port, LED_R_Pin, GPIO_PIN_RESET);
-          else if (cnt < 300 && cnt % 7 == 0) HAL_GPIO_WritePin(LED_R_GPIO_Port, LED_R_Pin, GPIO_PIN_SET);
-          else if (cnt < 400) HAL_GPIO_WritePin(LED_R_GPIO_Port, LED_R_Pin, GPIO_PIN_RESET);
-          else if (cnt < 500 && cnt % 7 == 0) HAL_GPIO_WritePin(LED_R_GPIO_Port, LED_R_Pin, GPIO_PIN_SET);
-          else if (cnt < 600) HAL_GPIO_WritePin(LED_R_GPIO_Port, LED_R_Pin, GPIO_PIN_RESET);
-          else if (cnt < 700 && cnt % 7 == 0) HAL_GPIO_WritePin(LED_R_GPIO_Port, LED_R_Pin, GPIO_PIN_SET);
-          else if (cnt < 800) HAL_GPIO_WritePin(LED_R_GPIO_Port, LED_R_Pin, GPIO_PIN_RESET);
-          else if (cnt < 900 && cnt % 7 == 0) HAL_GPIO_WritePin(LED_R_GPIO_Port, LED_R_Pin, GPIO_PIN_SET);
-          else HAL_GPIO_WritePin(LED_R_GPIO_Port, LED_R_Pin, GPIO_PIN_RESET);
-        }
-        else
-        {
-          HAL_GPIO_WritePin(LED_R_GPIO_Port, LED_R_Pin, GPIO_PIN_RESET);
-        }
-        cnt++;
-        if(cnt >= 1000)//1s
-        { 
-            cnt = 0;
-        }
-        if(cnt < 100 && cnt %10 == 0)
-          HAL_GPIO_WritePin(LED_G_GPIO_Port, LED_G_Pin, GPIO_PIN_SET); //Heartbeat
-        else HAL_GPIO_WritePin(LED_G_GPIO_Port, LED_G_Pin, GPIO_PIN_RESET);
+        // TODO: Handle LED Indications
+        
     }
     else if (htim->Instance == TIM4)
     {
-      ++cnt1;
-      float current = (1 - ((float)(Imeas) / (1<<16))) * 3.3f / 0.16f;
-      float Output = ((((float)(Vout) - (float)(1<<15)) / (1<<15)) ) * 3.3f / 0.009756f;
-      if(Output > 200.0f) OV_flag = 1;
-      if(current > 10.0f) OC_flag = 1;
-      if(OC_flag || OV_flag)
-      {
-        HAL_TIM_Base_Stop_IT(&htim4);
-        TIM8->CCR4 = 0;
-        current *= 1000.0f; //A to mA
-        memcpy(&(ITM->PORT[1].u32), &current, 4);
-        memcpy(&(ITM->PORT[0].u32), &Output, 4);
-        return;
-      }
-      float d = PID_Compute(&pid, current);
-      TIM8->CCR4 = TIM8->ARR * d;
-      if(cnt1 >= 100000)
-      {
-        float temp  = 0.0f;
-        memcpy(&(ITM->PORT[0].u32), &temp, 4);
-        memcpy(&(ITM->PORT[1].u32), &temp, 4);
-        memcpy(&(ITM->PORT[2].u32), &temp, 4);
-        HAL_TIM_Base_Stop_IT(&htim4);
-        TIM8->CCR4 = 0;
-        return;
-      }
-      if(cnt1 % 10 == 0)
-      {
-        memcpy(&(ITM->PORT[0].u32), &Output, 4);
-        current *= 1000.0f; //A to mA
-        memcpy(&(ITM->PORT[1].u32), &current, 4);
-        memcpy(&(ITM->PORT[2].u32), &d, 4);
-      }
+      // Run Controller at 100kHz
+      Controller_Update(&charger_controller);
     }
 }
 

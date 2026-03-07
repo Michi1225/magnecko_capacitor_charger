@@ -1,24 +1,23 @@
 #include "PID.h"
 
-
-void PID_Init(PIDController *pid)
+PIDController current_controller =
 {
-    pid->Kp = KP;
-    pid->Ki = KI;
-    pid->Kd = KD;
-    pid->setpoint = 0.0f;
-    pid->integral = 0.0f;
-    pid->prevError = 0.0f;
-    pid->outputMin = OUTPUT_MIN;
-    pid->outputMax = OUTPUT_MAX;
-}
+    .Kp = KP_I,
+    .Ki = KI_I,
+    .Kd = KD_I,
+    .setpoint = 0.0f,
+    .integral = 0.0f,
+    .prevError = 0.0f,
+    .outputMin = OUTPUT_MIN_I,
+    .outputMax = OUTPUT_MAX_I
+};
 
-float PID_Compute(PIDController *pid, float measurement)
+float PID_Compute(PIDController *pid, float measurement, float dt)
 {
 #ifdef ENABLE_PID
     float error = pid->setpoint - measurement;
-    pid->integral += error * PERIOD;
-    float derivative = (error - pid->prevError) / PERIOD;
+    pid->integral += error * dt;
+    float derivative = (error - pid->prevError) / dt;
 
     float output = (pid->Kp * error) + (pid->Ki * pid->integral) + (pid->Kd * derivative);
 
@@ -27,13 +26,13 @@ float PID_Compute(PIDController *pid, float measurement)
         output = pid->outputMax;
         // Anti-windup: prevent integral from increasing further
         if (error > 0) {
-            pid->integral -= error * PERIOD; // Undo last integral addition
+            pid->integral -= error * dt; // Undo last integral addition
         }
     } else if (output < pid->outputMin) {
         output = pid->outputMin;
         // Anti-windup: prevent integral from decreasing further
         if (error < 0) {
-            pid->integral -= error * PERIOD; // Undo last integral addition
+            pid->integral -= error * dt; // Undo last integral addition
         }
     }
 

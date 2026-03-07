@@ -31,7 +31,7 @@ extern "C" {
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-
+#include <string.h>
 /* USER CODE END Includes */
 
 /* Exported types ------------------------------------------------------------*/
@@ -41,7 +41,16 @@ extern "C" {
 
 /* Exported constants --------------------------------------------------------*/
 /* USER CODE BEGIN EC */
+extern TIM_HandleTypeDef htim1;
+extern TIM_HandleTypeDef htim2;
+extern TIM_HandleTypeDef htim4;
+extern TIM_HandleTypeDef htim8;
 
+extern ADC_HandleTypeDef hadc1;
+extern ADC_HandleTypeDef hadc2;
+extern ADC_HandleTypeDef hadc3;
+
+extern SPI_HandleTypeDef hspi1;
 /* USER CODE END EC */
 
 /* Exported macro ------------------------------------------------------------*/
@@ -57,6 +66,10 @@ void Error_Handler(void);
 /* USER CODE END EFP */
 
 /* Private defines -----------------------------------------------------------*/
+#define VIN_MEAS_Pin GPIO_PIN_0
+#define VIN_MEAS_GPIO_Port GPIOC
+#define WD_nRST_Pin GPIO_PIN_1
+#define WD_nRST_GPIO_Port GPIOC
 #define WD_SNS_Pin GPIO_PIN_0
 #define WD_SNS_GPIO_Port GPIOA
 #define NCS_Pin GPIO_PIN_1
@@ -64,6 +77,12 @@ void Error_Handler(void);
 #define NCS_EXTI_IRQn EXTI1_IRQn
 #define IMON_Pin GPIO_PIN_4
 #define IMON_GPIO_Port GPIOA
+#define VOUT_MEAS_P_Pin GPIO_PIN_4
+#define VOUT_MEAS_P_GPIO_Port GPIOC
+#define VOUT_MEAS_N_Pin GPIO_PIN_5
+#define VOUT_MEAS_N_GPIO_Port GPIOC
+#define I_MEAS_Pin GPIO_PIN_1
+#define I_MEAS_GPIO_Port GPIOB
 #define CLR_Pin GPIO_PIN_6
 #define CLR_GPIO_Port GPIOC
 #define DRV_TIM_Pin GPIO_PIN_9
