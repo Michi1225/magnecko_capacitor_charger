@@ -1,5 +1,7 @@
 #include "Controller.h"
 #include "stm32h725xx.h"
+#include "stm32h7xx_hal.h"
+#include "stm32h7xx_hal_gpio.h"
 #include "stm32h7xx_hal_spi.h"
 
 
@@ -37,6 +39,12 @@ void Controller_Init(Controller *ctrl)
     ctrl->current_controller.outputMin = OUTPUT_MIN_I;
     ctrl->current_controller.outputMax = OUTPUT_MAX_I;
 
+    HAL_GPIO_WritePin(CLR_GPIO_Port, CLR_Pin, GPIO_PIN_RESET);
+    HAL_GPIO_WritePin(WD_nRST_GPIO_Port, WD_nRST_Pin, GPIO_PIN_RESET);
+    HAL_Delay(0);
+    HAL_GPIO_WritePin(CLR_GPIO_Port, CLR_Pin, GPIO_PIN_SET);
+    HAL_GPIO_WritePin(WD_nRST_GPIO_Port, WD_nRST_Pin, GPIO_PIN_SET);
+
 
     HAL_ADCEx_Calibration_Start(&hadc1, ADC_CALIB_OFFSET, ADC_DIFFERENTIAL_ENDED);
     HAL_ADCEx_Calibration_Start(&hadc2, ADC_CALIB_OFFSET, ADC_SINGLE_ENDED);
@@ -58,10 +66,13 @@ void Controller_Init(Controller *ctrl)
     //DRV
     HAL_TIM_PWM_Start(&htim8, TIM_CHANNEL_4);
     TIM8->CCR4 = 0;
+    // TIM8->CCR1 = 250; //TRGO for ADC
 
     // Controller Timer
     HAL_TIM_Base_Start_IT(&htim4);
 
+    
+    ctrl->max_counter = 0;
     
 
     ctrl->charger_data.ready = 1;
@@ -69,88 +80,104 @@ void Controller_Init(Controller *ctrl)
 
 void Controller_Update(Controller *ctrl)
 {
-    //Get Measurements
-    float VREF = getVref();
+    DWT->CYCCNT = 0; // Reset cycle counter for profiling
 
-    float Vadc = (float)(Imeas) / ADC_RES_16B * VREF;
-    float current = (VREF - Vadc) / IL_GAIN; //A
+    const float VREF = getVref();
+    const float vref_div_adc16 = VREF * INV_ADC_RES_16B;
+    const float Input = (float)ADC3_Buffer[0] * INV_ADC_RES_12B * VREF * INV_VIN_GAIN;
+    const float Output = (((float)Vout - (ADC_RES_16B * 0.5f)) * vref_div_adc16 * 2.0f) * INV_VOUT_GAIN;
+    const float current = (VREF - ((float)Imeas * vref_div_adc16)) * INV_IL_GAIN;
 
-    uint32_t Vin = ADC3_Buffer[0];
-    Vadc = (float)(Vin) / ADC_RES_12B * VREF; //V
-    float Input = Vadc / VIN_GAIN; //V
+    ChargerData *cdata = &ctrl->charger_data;
+    ReceiveData *rx = &ctrl->receive_data;
 
-    Vadc = ((float)(Vout) - ADC_RES_16B / 2.0f) / (ADC_RES_16B / 2.0f) * VREF; //V
-    float Output = Vadc / VOUT_GAIN; //V
+    cdata->vin_10mV = (uint16_t)(Input * 100.0f);
+    cdata->vout_10mV = (uint16_t)(Output * 100.0f);
+    cdata->imeas_mA = (uint16_t)(current * 1000.0f);
 
-    ctrl->charger_data.vin_10mV = (uint16_t)(Input * 100.0f);
-    ctrl->charger_data.vout_10mV = (uint16_t)(Output * 100.0f);
-    ctrl->charger_data.imeas_mA = (uint16_t)(current * 1000.0f);
+    ctrl->Vin = Input;
+    ctrl->Imeas = current;
+    ctrl->Vout = Output;
 
+    const uint8_t ov_fault = Output > 220.0f;
+    const uint8_t oc_sw_fault = current > 10.0f;
+    const uint8_t oc_hw_fault = HAL_GPIO_ReadPin(OC_GPIO_Port, OC_Pin);
+    const uint8_t wd_fault = !HAL_GPIO_ReadPin(WD_SNS_GPIO_Port, WD_SNS_Pin);
 
-    //Check Fault Conditions
-    if(Output > 220.0f) ctrl->charger_data.OV_fault = 1;
-    if(current > 10.0f) ctrl->charger_data.OC_fault = 1;
-    if(ctrl->charger_data.OV_fault || ctrl->charger_data.OC_fault)
-    {
-        // Only clear faults if charger is inactive.
-        if(ctrl->receive_data.clear_faults && !ctrl->charger_data.active)
-        {
-            ctrl->charger_data.OV_fault = 0;
-            ctrl->charger_data.OC_fault = 0;
+    cdata->OV_fault |= ov_fault;
+    if (oc_sw_fault) {
+        cdata->OC_fault = 1;
+        ctrl->oc_sw = 1;
+    } else if (oc_hw_fault) {
+        cdata->OC_fault = 1;
+        ctrl->oc_hw = 1;
+    }
+    cdata->WD_fault |= wd_fault;
+    if (ctrl->timeout_counter > 100 * CHARGER_TIMEOUT_MS) {
+        cdata->timeout = 1;
+    }
 
-            // Reset WD
+    const uint8_t has_fault = cdata->OV_fault | cdata->OC_fault | cdata->WD_fault | cdata->timeout;
+    if (has_fault) {
+        if (rx->clear_faults && !cdata->active) {
+            cdata->OV_fault = 0;
+            cdata->OC_fault = 0;
+            cdata->WD_fault = 0;
+            cdata->timeout = 0;
+
             HAL_GPIO_WritePin(WD_nRST_GPIO_Port, WD_nRST_Pin, GPIO_PIN_RESET);
-            HAL_Delay(10);
+            for (volatile int i = 0; i < 100000; i++);
             HAL_GPIO_WritePin(WD_nRST_GPIO_Port, WD_nRST_Pin, GPIO_PIN_SET);
-            
-            // Clear OC Fault Latch in DRV
+
             HAL_GPIO_WritePin(CLR_GPIO_Port, CLR_Pin, GPIO_PIN_RESET);
-            HAL_Delay(10);
+            for (volatile int i = 0; i < 100000; i++);
             HAL_GPIO_WritePin(CLR_GPIO_Port, CLR_Pin, GPIO_PIN_SET);
-        }
-        // Fault active, stop charging
-        else
-        {
-            ctrl->charger_data.active = 0;
-            TIM8->CCR4 = 0;
-            return;
-        }
-    }
 
-    //Run Controller
-    if(ctrl->charger_data.active && ctrl->receive_data.enable)
-    {
-        //Run Current Current Controller at 100kHz
-        float d = PID_Compute(&ctrl->current_controller, current, PERIOD);
-        TIM8->CCR4 = TIM8->ARR * d;
-
-        //Setpoint check
-        if(Output > VOLTAGE_SETPOINT)//Setpoint reached
-        {
+            HAL_GPIO_WritePin(LED_R_GPIO_Port, LED_R_Pin, GPIO_PIN_RESET);
+        } else {
+            cdata->active = 0;
+            ctrl->timeout_counter = 0;
+            HAL_GPIO_WritePin(LED_G_GPIO_Port, LED_G_Pin, GPIO_PIN_RESET);
+            HAL_GPIO_WritePin(LED_R_GPIO_Port, LED_R_Pin, GPIO_PIN_SET);
             TIM8->CCR4 = 0;
+        }
+    } else if (rx->enable) {
+        const float voltage_threshold = 0.95f * VOLTAGE_SETPOINT;
+        if (Output < voltage_threshold) {
+            cdata->active = 1;
             HAL_GPIO_WritePin(LED_G_GPIO_Port, LED_G_Pin, GPIO_PIN_SET);
-            ctrl->charger_data.active = 0;
-            PID_Reset(&ctrl->current_controller);
-            return;
         }
 
+        if (cdata->active) {
+            ++ctrl->timeout_counter;
+            const float d = PID_Compute(&ctrl->current_controller, current, PERIOD);
+            TIM8->CCR4 = (uint32_t)(TIM8->ARR * d);
+
+            if (Output > VOLTAGE_SETPOINT) {
+                TIM8->CCR4 = 0;
+                HAL_GPIO_WritePin(LED_G_GPIO_Port, LED_G_Pin, GPIO_PIN_RESET);
+                cdata->active = 0;
+                PID_Reset(&ctrl->current_controller);
+                ctrl->timeout_counter = 0;
+            }
+        }
+    } else {
+        TIM8->CCR4 = 0;
+        HAL_GPIO_WritePin(LED_G_GPIO_Port, LED_G_Pin, GPIO_PIN_RESET);
+        cdata->active = 0;
+        PID_Reset(&ctrl->current_controller);
     }
-    else if(Vout < 0.95f * VOLTAGE_SETPOINT && ctrl->receive_data.enable)
-    {
-        ctrl->charger_data.active = 1;
+
+    if (DWT->CYCCNT > ctrl->max_counter) {
+        ctrl->max_counter = DWT->CYCCNT;
     }
 }
 
 void Controller_CommunicationHandler(Controller *ctrl) 
 {
-    uint8_t txdata[8];
-    memcpy(txdata, &ctrl->charger_data, sizeof(ChargerData));
-    uint8_t rxdata[7];
-    if(HAL_SPI_TransmitReceive_DMA(&hspi1, txdata, rxdata, 7) == HAL_OK)
-    {
-        while(HAL_SPI_GetState(&hspi1) != HAL_SPI_STATE_READY 
-        || HAL_DMA_GetState(((&hspi1)->hdmarx)) != HAL_DMA_STATE_READY
-        || HAL_DMA_GetState(((&hspi1)->hdmatx)) != HAL_DMA_STATE_READY) __NOP();
-        memcpy(&ctrl->receive_data, rxdata, sizeof(ReceiveData));
-    }
+    // uint8_t txdata[8];
+    // memcpy(txdata, &ctrl->charger_data, sizeof(ChargerData));
+    // uint8_t rxdata[7];
+    ctrl->data_valid = 0;
+    HAL_SPI_TransmitReceive_IT(&hspi1, &ctrl->charger_data, &ctrl->receive_data, sizeof(ChargerData));
 }

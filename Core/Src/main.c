@@ -22,7 +22,6 @@
 #include "bdma.h"
 #include "dac.h"
 #include "dma.h"
-#include "memorymap.h"
 #include "spi.h"
 #include "tim.h"
 #include "gpio.h"
@@ -129,6 +128,9 @@ int main(void)
   /* USER CODE BEGIN WHILE */
 
 
+  CoreDebug->DEMCR |= CoreDebug_DEMCR_TRCENA_Msk; // Enable TRCENA
+  DWT->CYCCNT = 0;                               // Reset counter
+  DWT->CTRL |= DWT_CTRL_CYCCNTENA_Msk;           // Enable cycle counter
 
 
 
@@ -139,8 +141,11 @@ int main(void)
 
   while (1)
   {
-    ITM->PORT[0].u16 = charger_controller.charger_data.vin_10mV;
-    HAL_Delay(10);
+    memcpy(&(ITM->PORT[0].u32), &charger_controller.Imeas, sizeof(uint32_t));
+    HAL_Delay(0);
+    memcpy(&(ITM->PORT[1].u32), &charger_controller.Vout, sizeof(uint32_t));
+    // HAL_Delay(0);
+    // memcpy(&(ITM->PORT[2].u8), &charger_controller.charger_data, sizeof(uint8_t));
   
     /* USER CODE END WHILE */
 
@@ -218,7 +223,7 @@ void PeriphCommonClock_Config(void)
 
   /** Initializes the peripherals clock
   */
-  PeriphClkInitStruct.PeriphClockSelection = RCC_PERIPHCLK_ADC;
+  PeriphClkInitStruct.PeriphClockSelection = RCC_PERIPHCLK_ADC|RCC_PERIPHCLK_CKPER;
   PeriphClkInitStruct.PLL2.PLL2M = 4;
   PeriphClkInitStruct.PLL2.PLL2N = 12;
   PeriphClkInitStruct.PLL2.PLL2P = 2;
@@ -227,6 +232,7 @@ void PeriphCommonClock_Config(void)
   PeriphClkInitStruct.PLL2.PLL2RGE = RCC_PLL2VCIRANGE_3;
   PeriphClkInitStruct.PLL2.PLL2VCOSEL = RCC_PLL2VCOWIDE;
   PeriphClkInitStruct.PLL2.PLL2FRACN = 0;
+  PeriphClkInitStruct.CkperClockSelection = RCC_CLKPSOURCE_HSI;
   PeriphClkInitStruct.AdcClockSelection = RCC_ADCCLKSOURCE_PLL2;
   if (HAL_RCCEx_PeriphCLKConfig(&PeriphClkInitStruct) != HAL_OK)
   {
@@ -261,6 +267,15 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
       // Run Controller at 100kHz
       Controller_Update(&charger_controller);
     }
+}
+
+void HAL_SPI_TxRxCpltCallback(SPI_HandleTypeDef *hspi)
+{
+  if(hspi->Instance == SPI1)
+  {
+    // HAL_GPIO_WritePin(NCS_GPIO_Port, NCS_Pin, GPIO_PIN_SET);
+    charger_controller.data_valid = 1;
+  }
 }
 
 /* USER CODE END 4 */
