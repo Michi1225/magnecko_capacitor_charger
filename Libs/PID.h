@@ -16,14 +16,14 @@
 
 
 #define PERIOD 10E-6f //10us
-#define KP_I 0.05f
-#define KI_I 3.50f
+#define KP_I 0.01f
+#define KI_I 2.50f
 #define KD_I 0.00000f
 #define OUTPUT_MIN_I 0.0f
 #define OUTPUT_MAX_I 0.90f
-#define CURRENT_SETPOINT 4.0f
+#define CURRENT_SETPOINT 3.0f
 #define VOLTAGE_SETPOINT 200.0f
-#define RATELIMIT 100.0f // A/s
+#define RATELIMIT 1000.0f // A/s
 
 typedef struct {
     float Kp;       // Proportional gain

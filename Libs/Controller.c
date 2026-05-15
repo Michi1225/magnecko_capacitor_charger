@@ -64,9 +64,11 @@ void Controller_Init(Controller *ctrl)
     HAL_TIM_Base_Start_IT(&htim2);
 
     //DRV
+    HAL_TIM_Base_Start_IT(&htim8);
     HAL_TIM_PWM_Start(&htim8, TIM_CHANNEL_4);
     TIM8->CCR4 = 0;
-    // TIM8->CCR1 = 250; //TRGO for ADC
+    HAL_TIM_OC_Start(&htim8, TIM_CHANNEL_1); //TRGO for ADC
+    TIM8->CCR1 = 250; //TRGO for ADC
 
     // Controller Timer
     HAL_TIM_Base_Start_IT(&htim4);
@@ -152,6 +154,8 @@ void Controller_Update(Controller *ctrl)
             ++ctrl->timeout_counter;
             const float d = PID_Compute(&ctrl->current_controller, current, PERIOD);
             TIM8->CCR4 = (uint32_t)(TIM8->ARR * d);
+            if(TIM8->CCR4 < TIM8->ARR >> 1) TIM8->CCR1 = (uint32_t)(0.5f * (TIM8->ARR - TIM8->CCR4)); // Adjust ADC trigger based on duty cycle
+            else TIM8->CCR1 = (uint32_t)(0.5f * TIM8->CCR4);
 
             if (Output > VOLTAGE_SETPOINT) {
                 TIM8->CCR4 = 0;

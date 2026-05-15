@@ -1,6 +1,6 @@
 #include "main.h"
 
-#define SWO_SPEED 500E3 // 4Mhz
+#define SWO_SPEED 5e6 // 4Mhz
 void SWD_Init(void)
 {
   *(__IO uint32_t*)(0x5C001004) |= 0x00700000; // DBGMCU_CR D3DBGCKEN D1DBGCKEN TRACECLKEN
