@@ -6,7 +6,7 @@
   ******************************************************************************
   * @attention
   *
-  * Copyright (c) 2025 STMicroelectronics.
+  * Copyright (c) 2026 STMicroelectronics.
   * All rights reserved.
   *
   * This software is licensed under terms that can be found in the LICENSE file
@@ -20,7 +20,7 @@
 #include "main.h"
 #include "adc.h"
 #include "bdma.h"
-#include "dac.h"
+#include "dfsdm.h"
 #include "dma.h"
 #include "spi.h"
 #include "tim.h"
@@ -28,12 +28,7 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-#include "math.h"
-#include <string.h>
-#include "PID.h"
 #include "Controller.h"
-#include "swo.h"
-
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -54,23 +49,18 @@
 /* Private variables ---------------------------------------------------------*/
 
 /* USER CODE BEGIN PV */
-
+Controller charger_controller;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
 void PeriphCommonClock_Config(void);
-static void MPU_Config(void);
 /* USER CODE BEGIN PFP */
-
 
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
-uint8_t RX_Buffer[8] = {0};
-
-Controller charger_controller;
 
 /* USER CODE END 0 */
 
@@ -84,9 +74,6 @@ int main(void)
   /* USER CODE BEGIN 1 */
 
   /* USER CODE END 1 */
-
-  /* MPU Configuration--------------------------------------------------------*/
-  MPU_Config();
 
   /* MCU Configuration--------------------------------------------------------*/
 
@@ -109,44 +96,26 @@ int main(void)
 
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
-  MX_BDMA_Init();
   MX_DMA_Init();
+  MX_BDMA_Init();
   MX_ADC1_Init();
-  MX_ADC2_Init();
-  MX_ADC3_Init();
-  MX_SPI1_Init();
+  MX_DFSDM1_Init();
   MX_TIM1_Init();
-  MX_DAC1_Init();
+  MX_TIM3_Init();
   MX_TIM8_Init();
-  MX_TIM2_Init();
+  MX_SPI3_Init();
   MX_TIM4_Init();
+  MX_ADC3_Init();
+  MX_ADC2_Init();
+  MX_TIM2_Init();
   /* USER CODE BEGIN 2 */
-
+  Controller_Init(&charger_controller);
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
-
-
-  CoreDebug->DEMCR |= CoreDebug_DEMCR_TRCENA_Msk; // Enable TRCENA
-  DWT->CYCCNT = 0;                               // Reset counter
-  DWT->CTRL |= DWT_CTRL_CYCCNTENA_Msk;           // Enable cycle counter
-
-
-
-  HAL_GPIO_WritePin(LED_R_GPIO_Port, LED_R_Pin, GPIO_PIN_RESET);
-  HAL_GPIO_WritePin(LED_G_GPIO_Port, LED_G_Pin, GPIO_PIN_RESET);
-  SWD_Init();
-  Controller_Init(&charger_controller);
-
   while (1)
   {
-    memcpy(&(ITM->PORT[0].u32), &charger_controller.Imeas, sizeof(uint32_t));
-    HAL_Delay(0);
-    memcpy(&(ITM->PORT[1].u32), &charger_controller.Vout, sizeof(uint32_t));
-    // HAL_Delay(0);
-    // memcpy(&(ITM->PORT[2].u8), &charger_controller.charger_data, sizeof(uint8_t));
-  
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
@@ -223,7 +192,7 @@ void PeriphCommonClock_Config(void)
 
   /** Initializes the peripherals clock
   */
-  PeriphClkInitStruct.PeriphClockSelection = RCC_PERIPHCLK_ADC|RCC_PERIPHCLK_CKPER;
+  PeriphClkInitStruct.PeriphClockSelection = RCC_PERIPHCLK_ADC;
   PeriphClkInitStruct.PLL2.PLL2M = 4;
   PeriphClkInitStruct.PLL2.PLL2N = 12;
   PeriphClkInitStruct.PLL2.PLL2P = 2;
@@ -232,7 +201,6 @@ void PeriphCommonClock_Config(void)
   PeriphClkInitStruct.PLL2.PLL2RGE = RCC_PLL2VCIRANGE_3;
   PeriphClkInitStruct.PLL2.PLL2VCOSEL = RCC_PLL2VCOWIDE;
   PeriphClkInitStruct.PLL2.PLL2FRACN = 0;
-  PeriphClkInitStruct.CkperClockSelection = RCC_CLKPSOURCE_HSI;
   PeriphClkInitStruct.AdcClockSelection = RCC_ADCCLKSOURCE_PLL2;
   if (HAL_RCCEx_PeriphCLKConfig(&PeriphClkInitStruct) != HAL_OK)
   {
@@ -241,73 +209,22 @@ void PeriphCommonClock_Config(void)
 }
 
 /* USER CODE BEGIN 4 */
-
-void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin){
-    // Communication Request from Foot Controller
-    if(GPIO_Pin == NCS_Pin)
-    {
-      Controller_CommunicationHandler(&charger_controller);
-    }
-    else if (GPIO_Pin == OC_Pin)
-    {
-      charger_controller.charger_data.OC_fault = 1;
-    }
-}
-
-
-
-void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
-{
-    if(htim->Instance == TIM2){
-        // TODO: Handle LED Indications
-        
-    }
-    else if (htim->Instance == TIM4)
-    {
-      // Run Controller at 100kHz
-      Controller_Update(&charger_controller);
-    }
-}
-
 void HAL_SPI_TxRxCpltCallback(SPI_HandleTypeDef *hspi)
 {
-  if(hspi->Instance == SPI1)
-  {
-    // HAL_GPIO_WritePin(NCS_GPIO_Port, NCS_Pin, GPIO_PIN_SET);
+  if(hspi == CTRL_SPI_HANDLE) {
+    // Set data valid flag for main loop to process
     charger_controller.data_valid = 1;
+    HAL_SPI_TransmitReceive_IT(CTRL_SPI_HANDLE, &charger_controller.charger_data, &charger_controller.receive_data, sizeof(ChargerData));
   }
 }
 
-/* USER CODE END 4 */
-
- /* MPU Configuration */
-
-void MPU_Config(void)
+void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 {
-  MPU_Region_InitTypeDef MPU_InitStruct = {0};
-
-  /* Disables the MPU */
-  HAL_MPU_Disable();
-
-  /** Initializes and configures the Region and the memory to be protected
-  */
-  MPU_InitStruct.Enable = MPU_REGION_ENABLE;
-  MPU_InitStruct.Number = MPU_REGION_NUMBER0;
-  MPU_InitStruct.BaseAddress = 0x0;
-  MPU_InitStruct.Size = MPU_REGION_SIZE_4GB;
-  MPU_InitStruct.SubRegionDisable = 0x87;
-  MPU_InitStruct.TypeExtField = MPU_TEX_LEVEL0;
-  MPU_InitStruct.AccessPermission = MPU_REGION_NO_ACCESS;
-  MPU_InitStruct.DisableExec = MPU_INSTRUCTION_ACCESS_DISABLE;
-  MPU_InitStruct.IsShareable = MPU_ACCESS_SHAREABLE;
-  MPU_InitStruct.IsCacheable = MPU_ACCESS_NOT_CACHEABLE;
-  MPU_InitStruct.IsBufferable = MPU_ACCESS_NOT_BUFFERABLE;
-
-  HAL_MPU_ConfigRegion(&MPU_InitStruct);
-  /* Enables the MPU */
-  HAL_MPU_Enable(MPU_PRIVILEGED_DEFAULT);
-
+  if(htim == CTRL_TIMER) {
+    Controller_Update(&charger_controller);
+  }
 }
+/* USER CODE END 4 */
 
 /**
   * @brief  This function is executed in case of error occurrence.
@@ -323,8 +240,7 @@ void Error_Handler(void)
   }
   /* USER CODE END Error_Handler_Debug */
 }
-
-#ifdef  USE_FULL_ASSERT
+#ifdef USE_FULL_ASSERT
 /**
   * @brief  Reports the name of the source file and the source line number
   *         where the assert_param error has occurred.

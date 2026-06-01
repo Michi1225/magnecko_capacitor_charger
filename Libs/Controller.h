@@ -3,22 +3,43 @@
 #include "main.h"
 #include "PID.h"
 #include <stdint.h>
+#include "utils.h"
+
+#define CLAMP(x, min, max) ((x < min) ? min : ((x > max) ? max : x))
+#define PI 3.14159265f
+
+#define n 5 // Turns ratio
 
 
 #define VREFINT 1.21f
+#define VREF_EXT 1.65f
+
 #define ADC_RES_16B 65536.0f
 #define INV_ADC_RES_16B 15.2587891E-6f
 #define ADC_RES_12B 4096.0f
 #define INV_ADC_RES_12B 244.140625E-6f
-#define CURRENT_SENSE_RESISTOR 0.008f
-#define VIN_GAIN 0.0544f // V/V
-#define INV_VIN_GAIN 18.38235294f // V/V
-#define VOUT_GAIN 0.009756f // V/V
-#define INV_VOUT_GAIN 102.476f // V/V
-#define IL_GAIN 0.16f // V/A
-#define INV_IL_GAIN 6.25f // A/V
+
+
+// Primary side Measurements
+#define VIN_GAIN 0.053030303f // V/V
+#define INV_VIN_GAIN 18.85714287f // V/V
+
+#define IPRIM_GAIN 0.14f // V/A
+#define INV_IPRIM_GAIN 7.14285714f // A/V
+
+// Secondary side measurements
+#define Pow23 8388608.0f //2^23, since DFSDM is in 24-bit mode but signed
+#define DIV2Pow23 1.1920929E-7f //1/2^23
+
+#define VOUT_FS 250.5f // Full scale voltage: 1V *(5*499k +10k)/10k
+#define IOUT_FS 2.5f //Full scale current: 50mV / 20mOhm
 
 #define CHARGER_TIMEOUT_MS 500 //smaller than 655ms to fit in uint16_t
+
+#define WD_TIMER &htim4
+#define CTRL_TIMER &htim2
+
+#define CTRL_SPI_HANDLE &hspi3
 
 
 
@@ -55,6 +76,7 @@ typedef struct
     float Vout;
     float Imeas;
     float Vin;
+    float Iout;
 
     uint16_t timeout_counter;
 
@@ -70,3 +92,7 @@ typedef struct
 void Controller_Init(Controller* ctrl);
 void Controller_Update(Controller* ctrl);
 void Controller_CommunicationHandler(Controller* ctrl);
+
+void clear_faults(Controller* ctrl);
+void handle_faults(Controller* ctrl);
+void set_phase_shift_rad(float rad);
