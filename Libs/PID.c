@@ -6,7 +6,6 @@ PIDController current_controller =
 {
     .Kp = KP_I,
     .Ki = KI_I,
-    .Kd = KD_I,
     .setpoint = 0.0f,
     .integral = 0.0f,
     .prevError = 0.0f,

@@ -16,8 +16,8 @@
 
 
 #define PERIOD 100E-6f //100us
-#define KP_I 0.01f
-#define KI_I 2.50f
+#define KP_I 0.0f
+#define KI_I 0.50f
 #define OUTPUT_MIN_I 0.0f
 #define OUTPUT_MAX_I 200.0f
 #define CURRENT_SETPOINT 1.0f
@@ -27,7 +27,6 @@
 typedef struct {
     float Kp;       // Proportional gain
     float Ki;       // Integral gain
-    float Kd;       // Derivative gain
     float setpoint; // Desired target value
     float integral; // Integral term
     float prevError;// Previous error value

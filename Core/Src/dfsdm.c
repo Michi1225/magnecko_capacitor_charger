@@ -58,7 +58,7 @@ void MX_DFSDM1_Init(void)
   hdfsdm1_filter1.Init.RegularParam.FastMode = DISABLE;
   hdfsdm1_filter1.Init.RegularParam.DmaMode = ENABLE;
   hdfsdm1_filter1.Init.FilterParam.SincOrder = DFSDM_FILTER_SINC3_ORDER;
-  hdfsdm1_filter1.Init.FilterParam.Oversampling = 1;
+  hdfsdm1_filter1.Init.FilterParam.Oversampling = 256;
   hdfsdm1_filter1.Init.FilterParam.IntOversampling = 1;
   if (HAL_DFSDM_FilterInit(&hdfsdm1_filter1) != HAL_OK)
   {
@@ -177,8 +177,8 @@ void HAL_DFSDM_FilterMspInit(DFSDM_Filter_HandleTypeDef* dfsdm_filterHandle)
     hdma_dfsdm1_flt0.Init.Direction = DMA_PERIPH_TO_MEMORY;
     hdma_dfsdm1_flt0.Init.PeriphInc = DMA_PINC_DISABLE;
     hdma_dfsdm1_flt0.Init.MemInc = DMA_MINC_ENABLE;
-    hdma_dfsdm1_flt0.Init.PeriphDataAlignment = DMA_PDATAALIGN_HALFWORD;
-    hdma_dfsdm1_flt0.Init.MemDataAlignment = DMA_MDATAALIGN_HALFWORD;
+    hdma_dfsdm1_flt0.Init.PeriphDataAlignment = DMA_PDATAALIGN_WORD;
+    hdma_dfsdm1_flt0.Init.MemDataAlignment = DMA_MDATAALIGN_WORD;
     hdma_dfsdm1_flt0.Init.Mode = DMA_CIRCULAR;
     hdma_dfsdm1_flt0.Init.Priority = DMA_PRIORITY_LOW;
     hdma_dfsdm1_flt0.Init.FIFOMode = DMA_FIFOMODE_DISABLE;
@@ -200,8 +200,8 @@ void HAL_DFSDM_FilterMspInit(DFSDM_Filter_HandleTypeDef* dfsdm_filterHandle)
     hdma_dfsdm1_flt1.Init.Direction = DMA_PERIPH_TO_MEMORY;
     hdma_dfsdm1_flt1.Init.PeriphInc = DMA_PINC_DISABLE;
     hdma_dfsdm1_flt1.Init.MemInc = DMA_MINC_ENABLE;
-    hdma_dfsdm1_flt1.Init.PeriphDataAlignment = DMA_PDATAALIGN_HALFWORD;
-    hdma_dfsdm1_flt1.Init.MemDataAlignment = DMA_MDATAALIGN_HALFWORD;
+    hdma_dfsdm1_flt1.Init.PeriphDataAlignment = DMA_PDATAALIGN_WORD;
+    hdma_dfsdm1_flt1.Init.MemDataAlignment = DMA_MDATAALIGN_WORD;
     hdma_dfsdm1_flt1.Init.Mode = DMA_CIRCULAR;
     hdma_dfsdm1_flt1.Init.Priority = DMA_PRIORITY_LOW;
     hdma_dfsdm1_flt1.Init.FIFOMode = DMA_FIFOMODE_DISABLE;

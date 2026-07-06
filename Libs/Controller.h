@@ -30,9 +30,10 @@
 // Secondary side measurements
 #define Pow23 8388608.0f //2^23, since DFSDM is in 24-bit mode but signed
 #define DIV2Pow23 1.1920929E-7f //1/2^23
+#define DIV2Pow24 5.96046448E-8f //1/2^24
 
-#define VOUT_FS 250.5f // Full scale voltage: 1V *(5*499k +10k)/10k
-#define IOUT_FS 2.5f //Full scale current: 50mV / 20mOhm
+#define VOUT_FS 313.125f // Full scale voltage: 1V *(5*499k +10k)/10k @ 80% FS
+#define IOUT_FS 3.125f //Full scale current: 50mV / 20mOhm @ 80% FS
 
 #define CHARGER_TIMEOUT_MS 500 //smaller than 655ms to fit in uint16_t
 

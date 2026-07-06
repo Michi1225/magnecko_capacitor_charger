@@ -12,19 +12,24 @@
 
 
 __section(".RAM_D3") uint32_t Vrefint;
-__section(".RAM") uint32_t Imeas;
-__section(".RAM") uint32_t Vin;
-__section(".RAM") int32_t Iout;
-__section(".RAM") int32_t Vout;
+__section(".RAM_D2") volatile uint32_t Imeas;
+__section(".RAM_D2") volatile uint32_t Vin;
+__section(".RAM_D2") int32_t Iout;
+__section(".RAM_D2") int32_t Vout;
 
 static float getVref()
 {
-    uint32_t vref_adc = Vrefint;
+    uint32_t vref_adc = Vrefint & 0xFFFF; // Mask to get the lower 16 bits
+    if (vref_adc == 0) {
+        return 3.3f; // Avoid division by zero, return 0 or handle error as appropriate
+    }
     return ADC_RES_12B * VREFINT / (float)vref_adc;
 }
 
 void Controller_Init(Controller *ctrl)
 {
+    HAL_StatusTypeDef status = HAL_OK;
+
     ctrl->charger_data.ready = 0;
     ctrl->charger_data.active = 0;
     ctrl->charger_data.OC_fault = 0;
@@ -39,7 +44,6 @@ void Controller_Init(Controller *ctrl)
 
     ctrl->current_controller.Kp = KP_I;
     ctrl->current_controller.Ki = KI_I;
-    ctrl->current_controller.Kd = KD_I;
     ctrl->current_controller.setpoint = CURRENT_SETPOINT;
     ctrl->current_controller.integral = 0.0f;
     ctrl->current_controller.prevError = 0.0f;
@@ -53,40 +57,42 @@ void Controller_Init(Controller *ctrl)
     HAL_GPIO_WritePin(nWD_RST_GPIO_Port, nWD_RST_Pin, GPIO_PIN_SET);
 
 
-    HAL_ADCEx_Calibration_Start(&hadc1, ADC_CALIB_OFFSET, ADC_SINGLE_ENDED);
-    HAL_ADCEx_Calibration_Start(&hadc2, ADC_CALIB_OFFSET, ADC_SINGLE_ENDED);
-    HAL_ADCEx_Calibration_Start(&hadc3, ADC_CALIB_OFFSET, ADC_SINGLE_ENDED);
+    status |= HAL_ADCEx_Calibration_Start(&hadc1, ADC_CALIB_OFFSET, ADC_SINGLE_ENDED);
+    status |= HAL_ADCEx_Calibration_Start(&hadc2, ADC_CALIB_OFFSET, ADC_SINGLE_ENDED);
+    status |= HAL_ADCEx_Calibration_Start(&hadc3, ADC_CALIB_OFFSET, ADC_SINGLE_ENDED);
 
-    HAL_ADC_Start_DMA(&hadc3, &Vrefint, 1);
-    HAL_ADC_Start_DMA(&hadc2, &Vin, 1);
-    HAL_ADC_Start_DMA(&hadc1, &Imeas, 1);
+    status |= HAL_ADC_Start_DMA(&hadc3, &Vrefint, 1);
+    status |= HAL_ADC_Start_DMA(&hadc2, &Vin, 1);
+    status |= HAL_ADC_Start_DMA(&hadc1, &Imeas, 1);
 
 
-    HAL_DFSDM_FilterRegularStart_DMA(&hdfsdm1_filter0, &Iout, 1);
-    HAL_DFSDM_FilterRegularStart_DMA(&hdfsdm1_filter1, &Vout, 1);
+    status |= HAL_DFSDM_FilterRegularStart_DMA(&hdfsdm1_filter0, &Iout, 1);
+    status |= HAL_DFSDM_FilterRegularStart_DMA(&hdfsdm1_filter1, &Vout, 1);
 
     PID_SetSetpoint(&ctrl->current_controller, CURRENT_SETPOINT);
 
     // WD Timer
-    HAL_TIM_PWM_Start(WD_TIMER, TIM_CHANNEL_1);
+    status |= HAL_TIM_PWM_Start(WD_TIMER, TIM_CHANNEL_1);
     (WD_TIMER)->Instance->CCR1 = (WD_TIMER)->Instance->ARR >> 1; // 50% duty cycle
 
     //DRV
-    HAL_TIM_PWM_Start(&htim1, HAL_TIM_ACTIVE_CHANNEL_3);
+    status |= HAL_TIM_PWM_Start(&htim1, TIM_CHANNEL_3);
+    status |= HAL_TIMEx_PWMN_Start(&htim1, TIM_CHANNEL_3);
     TIM1->CCR3 = 0;
-    HAL_TIM_OC_Start(&htim1, HAL_TIM_ACTIVE_CHANNEL_1); // Master trigger for TIM8
+    status |= HAL_TIM_OC_Start(&htim1, TIM_CHANNEL_1); // Master trigger for TIM8
     TIM1->CCR1 = 0; //Initial phase shift = 0
-    HAL_TIM_OC_Start(&htim1, HAL_TIM_ACTIVE_CHANNEL_2); //Master Trigger for ADC sampling
+    status |= HAL_TIM_OC_Start(&htim1, TIM_CHANNEL_2); //Master Trigger for ADC sampling (FIXME:)
     TIM1->CCR2 = 0; //Initial phase shift = 0
-    HAL_TIM_PWM_Start(&htim8, HAL_TIM_ACTIVE_CHANNEL_2);
-    TIM8->CCR2 = TIM8->ARR >> 1; // 50% duty
-    TIM1->CCR3 = TIM1->ARR >> 1; //50% duty
+    status |= HAL_TIM_PWM_Start(&htim8, TIM_CHANNEL_2);
+    status |= HAL_TIMEx_PWMN_Start(&htim8, TIM_CHANNEL_2);
+    TIM8->CCR2 = 0; // 0% duty
+    TIM1->CCR3 = 0; // 0% duty
 
     // Controller Timer
-    HAL_TIM_Base_Start_IT(CTRL_TIMER);
+    status |= HAL_TIM_Base_Start_IT(CTRL_TIMER);
 
     // Start SPI Communication
-    HAL_SPI_TransmitReceive_IT(CTRL_SPI_HANDLE, &ctrl->charger_data, &ctrl->receive_data, sizeof(ChargerData));
+    status |= HAL_SPI_TransmitReceive_IT(CTRL_SPI_HANDLE, &ctrl->charger_data, &ctrl->receive_data, sizeof(ChargerData));
 
     
     ctrl->max_counter = 0;
@@ -103,12 +109,13 @@ void Controller_Update(Controller *ctrl)
     const float vref_div_adc16 = V3V3INT * INV_ADC_RES_16B;
 
     // Primary measurements
-    const float v_in = (float)Vin * INV_ADC_RES_12B * V3V3INT * INV_VIN_GAIN;
-    const float i_prim = (((float)Imeas * vref_div_adc16) - V3V3INT) * INV_IPRIM_GAIN;
+    const float v_in = (float)(Vin & 0xFFFF) * INV_ADC_RES_16B * V3V3INT * INV_VIN_GAIN;
+    const float i_prim = (((float)(Imeas & 0xFFFF) * vref_div_adc16) - V3V3INT / 2) * INV_IPRIM_GAIN;
 
     // Secondary measurements
-    const float v_out = (float)Vout * DIV2Pow23 * VOUT_FS;
-    const float i_out = (float)Iout * DIV2Pow23 * IOUT_FS;
+    const float v_out = ((float)(Vout >> 8) * VOUT_FS) * DIV2Pow24;
+    const float i_out = -((float)(Iout >> 8) * IOUT_FS) * DIV2Pow24;
+
 
     ChargerData *cdata = &ctrl->charger_data;
     ReceiveData *rx = &ctrl->receive_data;
@@ -164,6 +171,8 @@ void Controller_Update(Controller *ctrl)
         }
 
         if (cdata->active) {
+            TIM8->CCR2 = TIM8->ARR >> 1; // 50% duty
+            TIM1->CCR3 = TIM1->ARR >> 1; //50% duty
             ++ctrl->timeout_counter;
 
 
@@ -179,15 +188,22 @@ void Controller_Update(Controller *ctrl)
             // Max Charge Reached
             if (v_out > VOLTAGE_SETPOINT) {
                 set_phase_shift_rad(0.0f);
-                setStatusLED(255, 0, 0);
+                setStatusLED(0, 0, 255);
                 cdata->active = 0;
                 ctrl->timeout_counter = 0;
                 PID_Reset(&ctrl->current_controller);
             }
         }
+        else
+        {
+            TIM8->CCR2 = 0; // 0% duty
+            TIM1->CCR3 = 0; // 0% duty
+        }
     } else {
         set_phase_shift_rad(0.0f);
         setStatusLED(0, 0, 0);
+        TIM8->CCR2 = 0; // 0% duty
+        TIM1->CCR3 = 0; // 0% duty
         cdata->active = 0;
         PID_Reset(&ctrl->current_controller);
     }

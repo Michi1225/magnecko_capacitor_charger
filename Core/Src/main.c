@@ -29,6 +29,8 @@
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include "Controller.h"
+#include "swo.h"
+#include "utils.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -109,13 +111,28 @@ int main(void)
   MX_ADC2_Init();
   MX_TIM2_Init();
   /* USER CODE BEGIN 2 */
+  SWD_Init();
   Controller_Init(&charger_controller);
+  HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_1);
+  HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_2);
+  HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_4);
+
+  setStatusLEDHex(0x00FF00); // Green
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
+  memcpy(&(ITM->PORT[0].u32), &(charger_controller.Iout), sizeof(float));
+  memcpy(&(ITM->PORT[1].u32), &(charger_controller.Vout), sizeof(float));
+  // HAL_Delay(10000);
+  // charger_controller.receive_data.enable = 1;
   while (1)
   {
+    memcpy(&(ITM->PORT[0].u32), &(charger_controller.Iout), sizeof(float));
+    memcpy(&(ITM->PORT[1].u32), &(charger_controller.Vout), sizeof(float));
+    for(int i = 0; i < 10000; i++) {
+      __NOP();
+    }
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
