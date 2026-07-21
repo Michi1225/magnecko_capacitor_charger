@@ -124,12 +124,16 @@ int main(void)
   /* USER CODE BEGIN WHILE */
   memcpy(&(ITM->PORT[0].u32), &(charger_controller.Iout), sizeof(float));
   memcpy(&(ITM->PORT[1].u32), &(charger_controller.Vout), sizeof(float));
-  // HAL_Delay(10000);
-  // charger_controller.receive_data.enable = 1;
+  HAL_GPIO_WritePin(nCLR_OC_GPIO_Port, nCLR_OC_Pin, GPIO_PIN_RESET);
   while (1)
   {
-    memcpy(&(ITM->PORT[0].u32), &(charger_controller.Iout), sizeof(float));
+    // memcpy(&(ITM->PORT[0].u32), &(charger_controller.Iout), sizeof(float));
+    for(int i = 0; i < 10000; i++) {
+      __NOP();
+    }
+    ITM->PORT[0].u16 = charger_controller.timeout_counter;
     memcpy(&(ITM->PORT[1].u32), &(charger_controller.Vout), sizeof(float));
+    memcpy(&(ITM->PORT[2].u32), &(charger_controller.Iout), sizeof(float));
     for(int i = 0; i < 10000; i++) {
       __NOP();
     }

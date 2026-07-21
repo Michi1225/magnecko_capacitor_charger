@@ -3,7 +3,7 @@
 #define SWO_SPEED 5e6 // 4Mhz
 #define ENABLE_PORT0 1
 #define ENABLE_PORT1 1
-#define ENABLE_PORT2 0
+#define ENABLE_PORT2 1
 #define ENABLE_PORT3 0
 #define ENABLE_PORT4 0
 #define ENABLE_PORT5 0

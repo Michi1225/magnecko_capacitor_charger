@@ -113,8 +113,8 @@ void Controller_Update(Controller *ctrl)
     const float i_prim = (((float)(Imeas & 0xFFFF) * vref_div_adc16) - V3V3INT / 2) * INV_IPRIM_GAIN;
 
     // Secondary measurements
-    const float v_out = ((float)(Vout >> 8) * VOUT_FS) * DIV2Pow24;
-    const float i_out = -((float)(Iout >> 8) * IOUT_FS) * DIV2Pow24;
+    const float v_out = ((float)(Vout >> 8) * VOUT_FS) * DIV2Pow23;
+    const float i_out = -((float)(Iout >> 8) * IOUT_FS) * DIV2Pow23;
 
 
     ChargerData *cdata = &ctrl->charger_data;
@@ -243,6 +243,8 @@ void handle_faults(Controller *ctrl)
     ChargerData *cdata = &ctrl->charger_data;
     cdata->active = 0;
     ctrl->timeout_counter = 0;
+    TIM8->CCR2 = 0; // 0% duty
+    TIM1->CCR3 = 0; // 0% duty
     setStatusLED(255, 0, 0);
     set_phase_shift_rad(0.0f);
 }
