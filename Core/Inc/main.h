@@ -52,6 +52,8 @@ extern SPI_HandleTypeDef hspi3;
 extern ADC_HandleTypeDef hadc1;
 extern ADC_HandleTypeDef hadc2;
 extern ADC_HandleTypeDef hadc3;
+
+extern CRC_HandleTypeDef hcrc;
 /* USER CODE END EC */
 
 /* Exported macro ------------------------------------------------------------*/

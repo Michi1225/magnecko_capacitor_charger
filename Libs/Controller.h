@@ -56,6 +56,7 @@ typedef struct __attribute((packed))
     uint16_t vin_10mV;
     uint16_t vout_10mV;
     uint16_t imeas_mA;
+    uint32_t crc;
 }ChargerData;
 
 typedef struct __attribute((packed))
@@ -63,13 +64,16 @@ typedef struct __attribute((packed))
     uint8_t enable       :   1;
     uint8_t clear_faults :   1;
     uint8_t              :   6;
-    uint16_t reserved[3];
+    uint16_t signature[3];
+    uint32_t crc
 }ReceiveData;
 
 typedef struct 
 {
     ChargerData charger_data;
-    ReceiveData receive_data;
+    ChargerData tx_data;
+    ReceiveData control_data;
+    ReceiveData rx_data;
     PIDController current_controller;
 
     uint8_t data_valid;
@@ -93,6 +97,8 @@ typedef struct
 void Controller_Init(Controller* ctrl);
 void Controller_Update(Controller* ctrl);
 void Controller_CommunicationHandler(Controller* ctrl);
+
+void rx_data_validate(Controller* ctrl);
 
 void clear_faults(Controller* ctrl);
 void handle_faults(Controller* ctrl);

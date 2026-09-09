@@ -20,6 +20,7 @@
 #include "main.h"
 #include "adc.h"
 #include "bdma.h"
+#include "crc.h"
 #include "dfsdm.h"
 #include "dma.h"
 #include "spi.h"
@@ -110,6 +111,7 @@ int main(void)
   MX_ADC3_Init();
   MX_ADC2_Init();
   MX_TIM2_Init();
+  MX_CRC_Init();
   /* USER CODE BEGIN 2 */
   SWD_Init();
   Controller_Init(&charger_controller);
@@ -230,12 +232,12 @@ void PeriphCommonClock_Config(void)
 }
 
 /* USER CODE BEGIN 4 */
+
 void HAL_SPI_TxRxCpltCallback(SPI_HandleTypeDef *hspi)
 {
   if(hspi == CTRL_SPI_HANDLE) {
     // Set data valid flag for main loop to process
-    charger_controller.data_valid = 1;
-    HAL_SPI_TransmitReceive_IT(CTRL_SPI_HANDLE, &charger_controller.charger_data, &charger_controller.receive_data, sizeof(ChargerData));
+    HAL_SPI_TransmitReceive_IT(CTRL_SPI_HANDLE, &charger_controller.tx_data, &charger_controller.rx_data, sizeof(ChargerData));
   }
 }
 

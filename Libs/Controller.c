@@ -17,6 +17,12 @@ __section(".RAM_D2") volatile uint32_t Vin;
 __section(".RAM_D2") int32_t Iout;
 __section(".RAM_D2") int32_t Vout;
 
+
+static void recalculate_crc32(Controller *ctrl)
+{
+    ctrl->tx_data.crc = HAL_CRC_Calculate(&hcrc, (uint32_t*)&ctrl->tx_data, sizeof(ChargerData) - sizeof(ctrl->tx_data.crc));
+}
+
 static float getVref()
 {
     uint32_t vref_adc = Vrefint & 0xFFFF; // Mask to get the lower 16 bits
@@ -39,8 +45,8 @@ void Controller_Init(Controller *ctrl)
     ctrl->charger_data.vout_10mV = 0;
     ctrl->charger_data.imeas_mA = 0;
 
-    ctrl->receive_data.enable = 0;
-    ctrl->receive_data.clear_faults = 0;
+    ctrl->control_data.enable = 0;
+    ctrl->control_data.clear_faults = 0;
 
     ctrl->current_controller.Kp = KP_I;
     ctrl->current_controller.Ki = KI_I;
@@ -92,7 +98,7 @@ void Controller_Init(Controller *ctrl)
     status |= HAL_TIM_Base_Start_IT(CTRL_TIMER);
 
     // Start SPI Communication
-    status |= HAL_SPI_TransmitReceive_IT(CTRL_SPI_HANDLE, &ctrl->charger_data, &ctrl->receive_data, sizeof(ChargerData));
+    status |= HAL_SPI_TransmitReceive_IT(CTRL_SPI_HANDLE, &ctrl->charger_data, &ctrl->control_data, sizeof(ChargerData));
 
     
     ctrl->max_counter = 0;
@@ -118,7 +124,7 @@ void Controller_Update(Controller *ctrl)
 
 
     ChargerData *cdata = &ctrl->charger_data;
-    ReceiveData *rx = &ctrl->receive_data;
+    ReceiveData *rx = &ctrl->control_data;
 
     cdata->vin_10mV = (uint16_t)(v_in * 100.0f);
     cdata->vout_10mV = (uint16_t)(v_out * 100.0f);
@@ -216,7 +222,9 @@ void Controller_Update(Controller *ctrl)
 void Controller_CommunicationHandler(Controller *ctrl) 
 {
     ctrl->data_valid = 0;
-    HAL_SPI_TransmitReceive_IT(CTRL_SPI_HANDLE, &ctrl->charger_data, &ctrl->receive_data, sizeof(ChargerData));
+    memcpy(&ctrl->tx_data, &ctrl->charger_data, sizeof(ChargerData));
+    recalculate_crc32(ctrl);
+    HAL_SPI_TransmitReceive_IT(CTRL_SPI_HANDLE, &ctrl->tx_data, &ctrl->control_data, sizeof(ChargerData));
 }
 
 void clear_faults(Controller *ctrl) 
@@ -253,4 +261,15 @@ void set_phase_shift_rad(float rad)
 {
     CLAMP(rad, 0.0f, PI);
     TIM1->CCR1 = (uint32_t)((rad / (2.0f * PI)) * TIM1->ARR);
+}
+
+void rx_data_validate(Controller* ctrl) 
+{
+    uint32_t calculated_crc = HAL_CRC_Calculate(&hcrc, (uint32_t*)&ctrl->control_data, sizeof(ReceiveData) - sizeof(ctrl->control_data.crc));
+    if (calculated_crc == ctrl->control_data.crc) {
+        // CRC is valid
+        // Process the received data
+        memcpy(&ctrl->control_data, &ctrl->rx_data, sizeof(ReceiveData));
+        // Handle other received data as needed
+    }
 }
